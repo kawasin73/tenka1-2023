@@ -2,6 +2,9 @@
 
 - [公式サイト](https://tenka1.klab.jp/2023/)
 - [YouTube配信](https://www.youtube.com/watch?v=PxG2794Ujfg)
+- [ポータルサイト](https://gbc2023.tenka1.klab.jp/portal/index.html)
+
+問題概要は14時公開予定です。
 
 ## 提供予定サンプルコード
 
