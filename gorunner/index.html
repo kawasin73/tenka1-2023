@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>天下一Runner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-0evHe/X+R7YkIZDRvuzKMRqM+OrBnVFBL6DOitfPri4tjfHxaWutUpFmBp4vmVor" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <link href="https://cdn.datatables.net/v/dt/dt-1.13.4/datatables.min.css" rel="stylesheet"/>
+    <script src="https://cdn.datatables.net/v/dt/dt-1.13.4/datatables.min.js"></script>
+</head>
+
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+    <symbol id="exclamation-triangle-fill" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+    </symbol>
+</svg>
+<script>
+    function updateCommandListTable(commandListTable, data) {
+        commandListTable.clear().draw();
+        for (let i = 0; i < data.length; i++) {
+            commandListTable.row.add([i, data[i]]).draw();
+        }
+    }
+
+    function updateProcessListTable(processListTable, data) {
+        processListTable.clear().draw();
+        for (let i = 0; i < data.length; i++) {
+            processListTable.row.add([data[i]['Pid'], data[i]['GameId'], data[i]['Cmd'], data[i]['GameType']]).draw();
+        }
+    }
+
+    function getHistoryLogLink(gameId) {
+        return `<a class="btn btn-outline-primary" href="./viewLog?id=${gameId}" target="_blank" role="button">log</a>`;
+    }
+
+    function updateHistoryListTable(historyListTable, data) {
+        historyListTable.clear().draw();
+        for (let i = 0; i < data.length; i++) {
+            const exitCode = data[i]['ExitCode'];
+            historyListTable.row.add([
+                data[i]['GameId'],
+                data[i]['Cmd'],
+                exitCode === -99 ? '' : exitCode,
+                getHistoryLogLink(data[i]['GameId']),
+            ]).draw();
+        }
+    }
+
+    var lastAlertMsg = "";
+
+    // アラート表示を追加する
+    function addAlert(alertMsg) {
+        // 前回のアラートと同じ内容の場合は表示しない
+        if (lastAlertMsg === alertMsg) {
+            return;
+        }
+        lastAlertMsg = alertMsg;
+
+        const alertBody = `
+<svg class="bi flex-shrink-0 me-2" width="24" height="24"><use xlink:href="#exclamation-triangle-fill"/></svg>
+<strong>${alertMsg}</strong>
+<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        const alertElement = document.createElement('div');
+        alertElement.classList.add('alert');
+        alertElement.classList.add('alert-danger');
+        alertElement.classList.add('alert-dismissible');
+        alertElement.classList.add('fade');
+        alertElement.classList.add('show');
+        alertElement.setAttribute('role', 'alert');
+        alertElement.insertAdjacentHTML('beforeend', alertBody);
+
+        const alertContainer = document.getElementById('alert-container');
+        alertContainer.appendChild(alertElement);
+    }
+
+    // APIからデータを取得して表示している情報を更新する
+    async function refreshContent(commandListTable, processListTable, historyListTable) {
+        const response = await (await fetch("./refresh")).json();
+        updateCommandListTable(commandListTable, response['commands']);
+        updateProcessListTable(processListTable, response['executingProcesses']);
+        updateHistoryListTable(historyListTable, response['outputFiles']);
+        response['errorMessages'].forEach(function (errorText) {
+            addAlert(errorText);
+        });
+    }
+
+    // トーストを追加する
+    function addToast(toastMessage) {
+        const toastBody = `
+<div class="toast-header">
+    <strong class="me-auto">通知</strong>
+    <button
+        type="button"
+        class="btn-close"
+        data-bs-dismiss="toast"
+        aria-label="Close"
+    ></button>
+</div>
+<div class="toast-body">${toastMessage}</div>
+        `;
+        const toastElement = document.createElement('div');
+        toastElement.classList.add('toast');
+        toastElement.setAttribute('role', 'alert');
+        toastElement.setAttribute('aria-live', 'assertive');
+        toastElement.setAttribute('aria-atomic', 'true');
+        toastElement.insertAdjacentHTML('beforeend', toastBody);
+
+        const toastContainer = document.getElementById('toast-container');
+        toastContainer.appendChild(toastElement);
+
+        const toastInstance = new bootstrap.Toast(toastElement);
+        toastInstance.show();
+    }
+
+    // 非表示のトーストを削除する
+    function deleteHiddenToast() {
+        const toastContainer = document.getElementById('toast-container');
+        const hiddenElements = toastContainer.querySelectorAll('.hide');
+        hiddenElements.forEach(element => {
+            element.remove();
+        });
+    }
+
+    // 通信状況の更新
+    async function refreshNetworkStatus(commandListTable, processListTable, historyListTable) {
+        try {
+            const res = await fetch("./networkStatus");
+            if (res.ok) {
+                const response = await res.json();
+                if (response['currentGameIds'].length) {
+                    document.getElementById('currentGameIds').innerText = response['currentGameIds'].join(", ");
+                } else {
+                    document.getElementById('currentGameIds').innerText = "なし";
+                }
+
+                if (0 < response['avgApiRttMs']) {
+                    document.getElementById('apiRttValue').innerText = "マッチング中 (レイテンシ: " + response['avgApiRttMs'] + "ms)";
+                } else {
+                    document.getElementById('apiRttValue').innerText = "未実行";
+                }
+            } else {
+                document.getElementById('currentGameIds').innerText = "なし";
+                document.getElementById('apiRttValue').innerText = "エラー";
+            }
+        } catch (e) {
+            document.getElementById('currentGameIds').innerText = "なし";
+            document.getElementById('apiRttValue').innerText = "エラー Runnerが起動しているか確認してください";
+        }
+    }
+
+    $(document).ready(function() {
+        setInterval(deleteHiddenToast, 10000);
+        refreshNetworkStatus();
+        setInterval(refreshNetworkStatus, 5000);
+    });
+
+    window.onload = function() {
+        const commandListTable = $('#commandListTable').DataTable({
+            paging: false,
+            searching: false,
+        });
+
+        const processListTable = $('#processListTable').DataTable({
+            paging: false,
+            searching: false,
+        });
+
+        const historyListTable = $('#historyListTable').DataTable({
+            paging: false,
+            searching: false,
+            createdRow: function (row, data, dataIndex) {
+                if (data[2] === 0) {
+                    $(row).addClass('table-success');
+                } else if (data[2] === '') {
+                    $(row).addClass('table-warning');
+                } else {
+                    $(row).addClass('table-danger');
+                }
+            },
+            order: [[ 0, "desc" ]],
+        });
+
+        refreshContent(commandListTable, processListTable, historyListTable);
+        setInterval(refreshContent, 3000, commandListTable, processListTable, historyListTable);
+
+        const startPracticeForm = document.getElementById('startPracticeForm');
+        const startPracticeButton = document.getElementById('startPracticeButton');
+        startPracticeButton.onclick = function() {
+            const startPracticeFormData = new FormData(startPracticeForm);
+            const action = startPracticeForm.getAttribute('action');
+            const options = {
+                method: 'POST',
+                body: startPracticeFormData,
+            };
+            fetch(action, options).then(response => {
+                if (response.ok) {
+                    addToast("練習試合を開始しました");
+                }
+            })
+        }
+
+        const registerForm = document.getElementById('registerForm');
+        const registerButton = document.getElementById('registerButton');
+        registerButton.onclick = function() {
+            const registerFormData = new FormData(registerForm);
+            const action = registerForm.getAttribute('action');
+            const options = {
+                method: 'POST',
+                body: registerFormData,
+            };
+            fetch(action, options).then(response => {
+                if (response.ok) {
+                    addToast("マッチングに登録しました");
+                }
+            })
+        }
+
+        const setServerForm = document.getElementById('set-server-form');
+        const setServerButton = document.getElementById('set-server-button');
+        setServerButton.onclick = function() {
+            const setServerFormData = new FormData(setServerForm);
+            const action = setServerForm.getAttribute('action');
+            const options = {
+                method: 'POST',
+                body: setServerFormData,
+            };
+            fetch(action, options).then(response => {
+                if (response.ok) {
+                    response.text().then(url => {
+                        document.getElementById('server').value = url;
+                    });
+                    addToast("ゲームサーバーのURLを変更しました");
+                }
+            })
+        }
+
+        const cdForm = document.getElementById('cd-form');
+        const cdButton = document.getElementById('cd-button');
+        cdButton.onclick = function() {
+            const cdFormData = new FormData(cdForm);
+            const action = cdForm.getAttribute('action');
+            const options = {
+                method: 'POST',
+                body: cdFormData,
+            };
+            fetch(action, options).then(response => {
+                if (response.ok) {
+                    response.text().then(pwd => {
+                        document.getElementById('pwd').value = pwd;
+                    });
+                    addToast("BOT実行時のディレクトリを変更しました");
+                }
+            })
+        }
+
+        const tokenForm = document.getElementById('token-form');
+        const tokenButton = document.getElementById('token-button');
+        tokenButton.onclick = function() {
+            const tokenFormData = new FormData(tokenForm);
+            const action = tokenForm.getAttribute('action');
+            const options = {
+                method: 'POST',
+                body: tokenFormData,
+            };
+            fetch(action, options).then(response => {
+                if (response.ok) {
+                    response.text().then(token => {
+                        document.getElementById('token').value = token;
+                    });
+                    addToast("トークンを更新しました");
+                }
+            })
+        }
+    }
+</script>
+
+<div class="container">
+    <div class="container mt-3 fixed-top" id="alert-container"></div>
+    <div class="card mt-3">
+        <h3 class="card-header"><span class="bi-gear"> </span>設定</h3>
+        <div class="card-body">
+            <form action="./setServer" method="post" id="set-server-form">
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="server">GameServer</label>
+                    </div>
+                    <div class="col-sm-8">
+                        <input type="text" class="form-control" id="server" value="{{ .conf.GameServer }}" name="server" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-primary form-control" id="set-server-button"><span class="bi-save"> </span>Set GameServer</button>
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        ゲームサーバーのアドレスを指定します
+                    </div>
+                </div>
+            </form>
+            <form action="./cd" method="post" id="cd-form">
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="pwd">pwd</label>
+                    </div>
+                    <div class="col-sm-8">
+                        <input type="text" class="form-control" id="pwd" value="{{ .pwd }}" name="pwd" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-primary form-control" id="cd-button"><span class="bi-save"> </span>Set pwd</button>
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        Bot実行時のディレクトリを変更します
+                    </div>
+                </div>
+            </form>
+            <form action="./setToken" method="post" id="token-form">
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="token">TOKEN</label>
+                    </div>
+                    <div class="col-sm-8">
+                        <input type="text" class="form-control" id="token" value="{{ .conf.Token }}" name="token" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-primary form-control" id="token-button"><span class="bi-save"> </span>Set TOKEN</button>
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        ポータルサイトに記載されているあなたのトークンを指定します
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <h3 class="card-header"><span class="bi-person"> </span>練習試合</h3>
+        <div class="card-body">
+            <div class="mb-3 form-text text-muted">
+                NPCのみが相手の練習試合を行いBotの動作確認を行うことができます
+            </div>
+            <form action="./start" method="post" id="startPracticeForm">
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="mode">mode</label>
+                    </div>
+                    <div class="col-sm-1">
+                        <input type="text" class="form-control" id="mode" value="{{ .conf.PracticeMode }}" name="mode" />
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        練習試合のモード (0:他のagentは移動しない, 1:他のagentはランダムに移動する)
+                    </div>
+                </div>
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="delay">delay</label>
+                    </div>
+                    <div class="col-sm-1">
+                        <input type="text" class="form-control" id="delay" value="{{ .conf.PracticeDelay }}" name="delay" />
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        開始までの遅延時間 (単位秒, 0以上10以下の整数)
+                    </div>
+                </div>
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="command">command</label>
+                    </div>
+                    <div class="col-sm-8">
+                        <input type="text" class="form-control" id="command" value="{{ .conf.PracticeCommand }}" name="command" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-primary" id="startPracticeButton"><span class="bi-play"> </span>Start practice</button>
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        Botを起動するコマンドの指定 (コマンドは設定のpwdディレクトリで実行されます)
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <h3 class="card-header"><span class="bi-people"> </span> マッチング参加</h3>
+        <div class="card-body">
+            <div class="card" style="width: 30rem;">
+                <p class="card-header">マッチング状況</p>
+                <div class="card-body" style="display: inline-block;">
+                    参加中のゲーム: <span id="currentGameIds"></span><br>
+                    join API: <span id="apiRttValue"></span>
+                </div>
+            </div>
+            <div class="mb-3 form-text text-muted">
+                マッチングに参加するBotを登録します
+            </div>
+            <form action="./register" method="post" id="registerForm">
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="agent0" id="agent0" checked>
+                    <label class="form-check-label" for="agent0">0</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="agent1" id="agent1" checked>
+                    <label class="form-check-label" for="agent1">1</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="agent2" id="agent2" checked>
+                    <label class="form-check-label" for="agent2">2</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="agent3" id="agent3" checked>
+                    <label class="form-check-label" for="agent3">3</label>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        どの番号にBotを登録するかを選択します。選択した番号すべてにcommandに記載された起動コマンドでBotが登録されます。
+                    </div>
+                </div>
+                <div class="mb-1 row">
+                    <div class="col-sm-1">
+                        <label class="col-form-label" for="registerCommand">command</label>
+                    </div>
+                    <div class="col-sm-8">
+                        <input type="text" class="form-control" id="registerCommand" value="" name="registerCommand" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-primary form-control" id="registerButton"><span class="bi-arrow-down-square"> </span> Register</button>
+                    </div>
+                </div>
+                <div class="mb-3 row">
+                    <div class="col-auto form-text text-muted">
+                        選択した番号に、記載したcommandを起動コマンドとしてBot登録をします。<br>
+                        Registerボタンを押したタイミングで、マッチング済で実行中プロセスが存在しないゲームがある場合、即座にBotが起動します。
+                    </div>
+                </div>
+            </form>
+            <table class="table table-hover" id="commandListTable">
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Command</th>
+                </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="mb-3 form-text text-muted">
+                各番号に登録されているBotの起動コマンド一覧です。一つ以上登録されている場合、join APIを使用してマッチングに参加します。<br>
+                マッチングが完了すると、登録されたBotの起動コマンドを用いてプロセスが起動します。起動するBotはラウンドロビン方式で選ばれます。
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <h3 class="card-header"><span class="bi-cpu"> </span>実行中プロセス</h3>
+        <div class="card-body">
+            <div class="mb-3 form-text text-muted">
+                実行中のBotのプロセス情報です。
+            </div>
+
+            <table class="table table-hover table-sm" id="processListTable">
+                <thead>
+                <tr>
+                    <th>PID</th>
+                    <th>GameID</th>
+                    <th>実行コマンド</th>
+                    <th>ゲームタイプ</th>
+                </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <h3 class="card-header"><span class="bi-list"> </span>実行履歴</h3>
+        <div class="card-body">
+            <div class="mb-3 form-text text-muted">
+                Botの実行履歴です。logボタンをクリックすることでその試合でのBotの標準出力/標準エラー出力を確認することができます。<br>
+                ログ保存先: {{ .outputDir }}
+            </div>
+            <table class="table table-hover table-sm" id="historyListTable">
+                <thead>
+                <tr>
+                    <th>GameID</th>
+                    <th>実行コマンド</th>
+                    <th>終了コード</th>
+                    <th>実行ログ</th>
+                </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-pprn3073KE6tl6bjs2QrFaJGz5/SUsLqktiwsUTF55Jfv3qYSDhgCecCxMW52nD2" crossorigin="anonymous"></script>
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 5" id="toast-container"></div>
+</body>
+</html>

@@ -4,21 +4,27 @@
 - [YouTube配信](https://www.youtube.com/watch?v=PxG2794Ujfg)
 - [ポータルサイト](https://gbc2023.tenka1.klab.jp/portal/index.html)
 
-問題概要は14時公開予定です。
+## ドキュメント
 
-## 提供予定サンプルコード
+- [問題概要およびAPI仕様](problem.md)
+- [チュートリアル](tutorial.md)
+- [Runnerの使い方](runner.md)
+- [ポータルの使い方](portal.md)
+- [ビジュアライザの使い方](visualizer.md)
 
-- Go
+## サンプルコード
+
+- [Go](go)
   - go1.21.1 で動作確認
-- Python
+- [Python](py)
   - python 3.8.10, python 3.11.2 で動作確認
-- C#
+- [C#](cs)
   - dotnet 6.0.406 で動作確認
-- Rust
+- [Rust](rust)
   - cargo 1.66.1 で動作確認
-- C++(libcurl) 通信にライブラリを使用
+- [C++(libcurl)](cpp) 通信にライブラリを使用
   - g++ 9.4.0 で動作確認
-- C++(Python) 通信にPythonを使用
+- [C++(Python)](cpp_and_python) 通信にPythonを使用
   - python 3.8.10, g++ 9.4.0 で動作確認
 
 
@@ -38,3 +44,8 @@
 - SNS等の利用について
   - 本コンテスト開催中にSNS等にコンテスト問題について言及して頂いて構いませんが、ソースコードを公開するなどの直接的なネタバレ行為はお控えください。
 ハッシュタグ: #klabtenka1
+
+## その他
+
+- [ギフトカード抽選プログラム](lottery)
+  - 抽選対象は join API で開始したゲームに一度以上 move API を実行した参加者です
